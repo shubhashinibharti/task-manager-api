@@ -1,0 +1,9 @@
+spring.application.name=task-api
+spring.docker.compose.file=task-api/docker-compose.yml
+spring.datasource.url=jdbc:postgresql://localhost:5432/taskmanager
+spring.datasource.username=your_username
+spring.datasource.password=your_password
+spring.datasource.driver-class-name=org.postgresql.Driver
+spring.jpa.hibernate.ddl-auto=update
+server.error.include-message=always
+spring.jpa.open-in-view=false
