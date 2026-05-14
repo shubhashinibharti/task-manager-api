@@ -11,15 +11,16 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
-import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 
 @Service
 public class TaskService {
 
+    private static final Logger log = LoggerFactory.getLogger(TaskService.class);
     private final TaskRepository taskRepository;
     private final UserRepository userRepository;
 
@@ -63,38 +64,54 @@ public class TaskService {
     public Page<TaskResponse> getAllTasks(int page, int size) {
         AppUser user = getLoggedInUser();
         Pageable pageable = PageRequest.of(page, size);
-        return taskRepository.findByAssignedUser(user, pageable)
+        Page<TaskResponse> result = taskRepository.findByAssignedUser(user, pageable)
                 .map(this::toResponse);
+        log.info("Fetched {} tasks for user: {}", result.getTotalElements(), user.getUsername());
+        return result;
     }
 
     // Creates a new task and assigns it to the logged-in user automatically
     public TaskResponse createTask(Task task) {
-        task.setAssignedUser(getLoggedInUser());
-        return toResponse(taskRepository.save(task));
+        AppUser user = getLoggedInUser();
+        task.setAssignedUser(user);
+        TaskResponse response = toResponse(taskRepository.save(task));
+        log.info("Task created: '{}' by user: {}", task.getTitle(), user.getUsername());
+        return response;
     }
 
     // Finds a single task by ID — throws 404 if not found
     public TaskResponse findById(Long id) {
         Task task = taskRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Task not found with id: " + id));
+                .orElseThrow(() -> {
+                    log.warn("Task not found: id={}", id);
+                    return new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Task not found with id: " + id);
+                });
         return toResponse(task);
     }
 
     // Deletes task by ID — validates existence first, returns 404 if not found
     public void deleteTask(Long id) {
-        taskRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Task not found with id: " + id));
+        AppUser user = getLoggedInUser();
+        Task task = taskRepository.findById(id)
+                .orElseThrow(() -> {
+                    log.warn("Delete failed - task not found: : id={}, user={}", id, user.getUsername());
+                    return new ResponseStatusException(
+                        HttpStatus.NOT_FOUND, "Task not found with id: " + id);
+                });
         taskRepository.deleteById(id);
+        log.info("Task deleted: id={}, title='{}', user={}",  id, task.getTitle(), user.getUsername());
     }
 
     // PATCH — updates only the fields that are NOT null in the request
     // Fields the client didn't send stay unchanged in DB
     public TaskResponse patchTask(Long id, Task updateTask) {
         Task existingTask = taskRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Task not found with id: " + id));
+                .orElseThrow(() -> {
+                    log.warn("Patch failed - task not found: id={}", id);
+                    return new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "Task not found with id: " + id);
+                });
 
         if (updateTask.getTitle() != null) {
             existingTask.setTitle(updateTask.getTitle());
@@ -105,20 +122,26 @@ public class TaskService {
         if (updateTask.getStatus() != null) {
             existingTask.setStatus(updateTask.getStatus());
         }
-
-        return toResponse(taskRepository.save(existingTask));
+        TaskResponse response =  toResponse(taskRepository.save(existingTask));
+        log.info("Task patched: id={}, title='{}'", id, existingTask.getTitle());
+        return response;
     }
 
     // PUT — replaces ALL fields regardless of null (full replacement)
     public TaskResponse updateFullTask(Long id, Task updateTask) {
         Task existingTask = taskRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND, "Task not found with id: " + id));
+                .orElseThrow(() -> {
+                    log.warn("Update failed - task not found: id={}", id);
+                    return new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "Task not found with id: " + id);
+                });
 
         existingTask.setTitle(updateTask.getTitle());
         existingTask.setDescription(updateTask.getDescription());
         existingTask.setStatus(updateTask.getStatus());
 
-        return toResponse(taskRepository.save(existingTask));
+        TaskResponse response =  toResponse(taskRepository.save(existingTask));
+        log.info("Task updated: id={}, title='{}'", id, existingTask.getTitle());
+        return response;
     }
 }
