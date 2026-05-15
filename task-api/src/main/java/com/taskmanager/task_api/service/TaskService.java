@@ -11,7 +11,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,12 +47,17 @@ public class TaskService {
     // Prevents exposing internal entity fields to client
     // Only sends what client needs: id, title, description, status, assignedTo (username only)
     private TaskResponse toResponse(Task task) {
+        AppUser assignedUser = task.getAssignedUser();
+        String userName = "Unknown";
+        if (assignedUser != null){
+            userName = assignedUser.getUsername();
+        }
         return new TaskResponse(
                 task.getId(),
                 task.getTitle(),
                 task.getDescription(),
                 task.getStatus(),
-                task.getAssignedUser().getUsername()
+                userName
         );
     }
 
@@ -62,12 +66,25 @@ public class TaskService {
     // Returns only tasks belonging to the logged-in user
     // Each Task converted to TaskResponse DTO before returning
     public Page<TaskResponse> getAllTasks(int page, int size) {
-        AppUser user = getLoggedInUser();
-        Pageable pageable = PageRequest.of(page, size);
-        Page<TaskResponse> result = taskRepository.findByAssignedUser(user, pageable)
-                .map(this::toResponse);
-        log.info("Fetched {} tasks for user: {}", result.getTotalElements(), user.getUsername());
-        return result;
+        boolean isAdmin = SecurityContextHolder.getContext()
+                .getAuthentication()
+                .getAuthorities()
+                .stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        PageRequest pageRequest=PageRequest.of(page, size);
+        if(isAdmin){
+            Page<TaskResponse> result =  taskRepository.findAll(pageRequest)
+                    .map(this::toResponse);
+            log.info("Admin fetched all {} tasks", result.getTotalElements());
+            return result;
+        }
+        else {
+            AppUser user = getLoggedInUser();
+            Page<TaskResponse> result = taskRepository.findByAssignedUser(user, pageRequest)
+                    .map(this::toResponse);
+            log.info("Fetched {} tasks for user: {}", result.getTotalElements(), user.getUsername());
+            return result;
+        }
     }
 
     // Creates a new task and assigns it to the logged-in user automatically
